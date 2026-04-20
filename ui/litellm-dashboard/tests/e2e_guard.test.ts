@@ -1,173 +1,102 @@
 /**
- * Unit coverage for the Playwright `guardedPage` fixture's URL classifier.
+ * Unit coverage for the Playwright `guardedPage` fixture classifiers.
  *
- * The fixture itself needs a running Playwright test to be exercised, so this
- * test isolates the pure `isForbiddenRequestUrl` helper and pins its behavior
- * against the set of patterns that the double-prefix incident motivated.
+ * The fixture itself needs a running Playwright test to exercise end-to-end
+ * (see `e2e_tests/tests/meta/*.spec.ts`). This file covers the two pure
+ * helpers:
  *
- * Axes covered:
- *   - double-prefix `/ui/ui/` regardless of resource type
- *   - API-verb-under-/ui/ only for xhr/fetch requests
- *   - document navigations to `/ui/<verb>` (pages like /ui/guardrails) must
- *     NOT be flagged
- *   - legitimate API paths at the root, cross-origin, and malformed URLs are
- *     never flagged
+ *   - `isForbiddenRequestUrl(url)` — pattern-matches the URL path against
+ *     known-bad shapes (currently: the `/ui/ui/` double-prefix signature).
+ *   - `isAllowedErrorResponse(url)` — explicit allow-list for URLs where a
+ *     4xx/5xx is legitimate.
+ *
+ * The response-status detection (any 4xx/5xx on an XHR/fetch) is not a pure
+ * function — it reads `Response.status()` — so it is covered by the
+ * Playwright meta-tests, not here.
  */
 
 import { describe, it, expect } from "vitest";
-import { isForbiddenRequestUrl } from "../e2e_tests/fixtures/guarded-page";
+import {
+  isAllowedErrorResponse,
+  isForbiddenRequestUrl,
+} from "../e2e_tests/fixtures/guarded-page";
 
 const ORIGIN = "http://localhost:4000";
 
 describe("isForbiddenRequestUrl", () => {
   describe("double-prefix /ui/ui/", () => {
-    it("should flag a /ui/ui/ XHR", () => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}/ui/ui/project/list`, "xhr");
+    it.each([
+      ["/ui/ui/project/list", "xhr payload"],
+      ["/ui/ui/", "document navigation"],
+      ["/ui/ui/foo.js", "script load"],
+      ["/ui/ui/key/info?a=1", "query string"],
+      ["/ui/ui/organization/list", "the exact path from the original bug report"],
+    ])("should flag %s (%s)", (path) => {
+      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`);
       expect(r.forbidden).toBe(true);
       expect(r.reason).toMatch(/double-prefix/);
     });
 
-    it("should flag a /ui/ui/ document navigation too", () => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}/ui/ui/`, "document");
-      expect(r.forbidden).toBe(true);
-      expect(r.reason).toMatch(/double-prefix/);
-    });
-
-    it("should flag a /ui/ui/ script load", () => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}/ui/ui/foo.js`, "script");
-      expect(r.forbidden).toBe(true);
-    });
-
-    it("should flag /ui/ui/ deep in path with query string", () => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}/ui/ui/key/info?a=1`, "xhr");
+    it("should flag /ui/ui/ even when behind a server_root_path prefix", () => {
+      // Simulates a proxy deployed under server_root_path="/llmproxy". If the
+      // same regression fires here, the double-prefix signature is still
+      // `/ui/ui/` somewhere in the path — root-path-agnostic.
+      const r = isForbiddenRequestUrl(`${ORIGIN}/llmproxy/ui/ui/key/list`);
       expect(r.forbidden).toBe(true);
     });
   });
 
-  describe("API verb nested under /ui/ (XHR/fetch only)", () => {
-    const forbiddenApiPaths = [
-      "/ui/key/info",
-      "/ui/key/list",
-      "/ui/team/list",
-      "/ui/user/info?user_id=abc",
-      "/ui/model/info",
-      "/ui/models",
-      "/ui/global/spend/logs",
-      "/ui/spend/calculate",
-      "/ui/customer/info",
-      "/ui/organization/list",
-      "/ui/health",
-      "/ui/sso/key/generate",
-      "/ui/config/update",
-      "/ui/budget/settings",
-      "/ui/tag/list",
-      "/ui/public/model_hub/info",
-      "/ui/invitation/new",
-      "/ui/callbacks/configs",
-    ];
-
-    it.each(forbiddenApiPaths)("should flag XHR %s", (path) => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`, "xhr");
-      expect(r.forbidden).toBe(true);
-      expect(r.reason).toMatch(/API endpoint nested under/);
-    });
-
-    it.each(forbiddenApiPaths)("should flag fetch %s", (path) => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`, "fetch");
-      expect(r.forbidden).toBe(true);
-    });
-
-    it.each(["document", "script", "stylesheet", "image", "font", "other"])(
-      "should NOT flag non-data resource type %s for /ui/key/info (page navigation, not an API call)",
-      (resourceType) => {
-        const r = isForbiddenRequestUrl(`${ORIGIN}/ui/key/info`, resourceType);
-        expect(r.forbidden).toBe(false);
-      },
-    );
-  });
-
-  describe("legitimate UI routes under /ui/ (never flagged)", () => {
-    const routes = [
+  describe("legitimate traffic (never flagged at request time)", () => {
+    it.each([
       "/",
       "/ui",
       "/ui/",
       "/ui/login",
       "/ui/virtual-keys",
-      "/ui/models-and-endpoints",
-      "/ui/teams",
-      "/ui/organizations",
-      "/ui/test-key",
-      "/ui/chat",
-      "/ui/logs",
-      "/ui/model-hub",
-      "/ui/api-reference",
-    ];
-
-    it.each(routes)("should allow document request %s", (path) => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`, "document");
-      expect(r.forbidden).toBe(false);
-    });
-
-    // `/ui/guardrails`, `/ui/usage`, `/ui/prompts` are real UI pages whose
-    // first segment collides with API verb names. They must not be flagged
-    // as document navigations.
-    it.each(["/ui/guardrails", "/ui/guardrails/edit", "/ui/usage", "/ui/prompts"])(
-      "should allow API-verb-named document route %s",
-      (path) => {
-        const r = isForbiddenRequestUrl(`${ORIGIN}${path}`, "document");
-        expect(r.forbidden).toBe(false);
-      },
-    );
-  });
-
-  describe("static assets under /ui/", () => {
-    it.each([
+      "/ui/guardrails", // API-verb-named UI route
+      "/ui/usage", // API-verb-named UI route
+      "/ui/prompts", // API-verb-named UI route
       "/ui/_next/static/chunks/abc.js",
-      "/ui/_next/data/abc.json",
       "/ui/assets/logos/openai.svg",
       "/ui/favicon.ico",
-      "/ui/login/index.html",
-      "/ui/foo.png",
-      "/ui/anything.css",
-      "/ui/anything.map",
-      "/ui/anything.woff2",
-    ])("should allow static asset %s", (path) => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`, "script");
-      expect(r.forbidden).toBe(false);
-    });
-  });
-
-  describe("legitimate API paths at the root (XHR/fetch)", () => {
-    it.each([
-      "/project/list",
+      // Legit API paths at the root — these are expected XHR destinations
+      // with the correct routing.
       "/key/info",
       "/team/list",
       "/user/info",
-      "/model/info",
       "/global/spend/logs",
       "/health",
       "/sso/key/generate",
-      "/callbacks/configs",
+      // Legit API paths under a server_root_path.
+      "/llmproxy/key/info",
+      "/llmproxy/ui", // dashboard root under custom root path
+      "/llmproxy/ui/_next/static/chunks/abc.js",
     ])("should allow %s", (path) => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`, "xhr");
+      const r = isForbiddenRequestUrl(`${ORIGIN}${path}`);
       expect(r.forbidden).toBe(false);
     });
   });
 
   describe("edge cases", () => {
     it("should allow cross-origin requests", () => {
-      const r = isForbiddenRequestUrl("https://api.example.com/project/list", "xhr");
+      const r = isForbiddenRequestUrl("https://api.example.com/project/list");
       expect(r.forbidden).toBe(false);
     });
 
-    it("should not throw on malformed URL", () => {
-      const r = isForbiddenRequestUrl("not a url", "xhr");
+    it("should not throw on a malformed URL", () => {
+      const r = isForbiddenRequestUrl("not a url");
       expect(r.forbidden).toBe(false);
     });
+  });
+});
 
-    it("should default to XHR semantics when resourceType is omitted", () => {
-      const r = isForbiddenRequestUrl(`${ORIGIN}/ui/key/info`);
-      expect(r.forbidden).toBe(true);
-    });
+describe("isAllowedErrorResponse", () => {
+  // The allow-list starts empty by design — each entry is a potential place
+  // for real regressions to hide. These tests pin that invariant so that
+  // anyone adding an entry has to update the tests alongside.
+  it("rejects all URLs when the allow-list is empty", () => {
+    expect(isAllowedErrorResponse(`${ORIGIN}/key/info`)).toBe(false);
+    expect(isAllowedErrorResponse(`${ORIGIN}/v2/login`)).toBe(false);
+    expect(isAllowedErrorResponse("https://example.com/anything")).toBe(false);
   });
 });

@@ -1,19 +1,23 @@
 /**
  * Meta-test: proves the `guardedPage` fixture is wired correctly.
  *
- * This test stands up a tiny ephemeral HTTP server inside the test, has the
- * browser navigate to it (plus a forbidden-looking URL), and verifies:
- *   - The guard fixture is actually installed (a `request` listener fires).
- *   - The classifier logic returns the expected verdicts at runtime
- *     (independent of the vitest unit suite).
+ * Exercises:
+ *   - The `request` listener actually fires on real HTTP navigation.
+ *   - The pure classifiers (`isForbiddenRequestUrl`, `isAllowedErrorResponse`)
+ *     return the expected verdicts at runtime — a sanity check independent
+ *     of the vitest unit suite.
  *
- * The rich URL-classification coverage lives in
- * `tests/e2e_guard.test.ts` (vitest). This meta-test complements it by
- * exercising the Playwright wiring itself, which the unit tests cannot.
+ * The rich classification coverage lives in `tests/e2e_guard.test.ts`
+ * (vitest). This meta-test complements it by exercising the Playwright
+ * wiring itself, which the unit tests cannot.
  */
 
-import { test, expect } from "../../fixtures/guarded-page";
-import { isForbiddenRequestUrl } from "../../fixtures/guarded-page";
+import {
+  test,
+  expect,
+  isAllowedErrorResponse,
+  isForbiddenRequestUrl,
+} from "../../fixtures/guarded-page";
 import * as http from "http";
 import type { AddressInfo } from "net";
 
@@ -39,20 +43,13 @@ test.describe("guardedPage fixture — liveness", () => {
     }
   });
 
-  test("should classify forbidden and allowed URLs at runtime", async () => {
-    // Runtime sanity — mirrors the unit tests, but executed through the
-    // same code path Playwright uses when the fixture evaluates verdicts.
-    expect(
-      isForbiddenRequestUrl("http://localhost:4000/ui/ui/project/list", "xhr").forbidden,
-    ).toBe(true);
-    expect(
-      isForbiddenRequestUrl("http://localhost:4000/ui/key/info", "xhr").forbidden,
-    ).toBe(true);
-    expect(
-      isForbiddenRequestUrl("http://localhost:4000/ui/guardrails", "document").forbidden,
-    ).toBe(false);
-    expect(
-      isForbiddenRequestUrl("http://localhost:4000/project/list", "xhr").forbidden,
-    ).toBe(false);
+  test("should classify URLs at runtime", async () => {
+    expect(isForbiddenRequestUrl("http://localhost:4000/ui/ui/project/list").forbidden).toBe(true);
+    expect(isForbiddenRequestUrl("http://localhost:4000/ui/key/info").forbidden).toBe(false);
+    expect(isForbiddenRequestUrl("http://localhost:4000/ui/guardrails").forbidden).toBe(false);
+    expect(isForbiddenRequestUrl("http://localhost:4000/project/list").forbidden).toBe(false);
+
+    // Empty allow-list invariant.
+    expect(isAllowedErrorResponse("http://localhost:4000/anything")).toBe(false);
   });
 });
