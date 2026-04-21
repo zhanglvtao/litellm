@@ -5623,6 +5623,10 @@ async def get_available_models_for_user(
     )
     from litellm.proxy.management_endpoints.team_endpoints import validate_membership
 
+    # If key has routing config, return empty list (passthrough - models from provider)
+    if hasattr(user_api_key_dict, 'routing') and user_api_key_dict.routing:
+        return []
+
     # Get proxy model list and access groups
     if llm_router is None:
         proxy_model_list = []

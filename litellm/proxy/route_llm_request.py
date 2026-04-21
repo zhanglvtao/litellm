@@ -341,7 +341,10 @@ async def route_request(  # noqa: PLR0915 - Complex routing function, refactorin
         if "generationConfig" in data and "config" not in data:
             data["config"] = data.pop("generationConfig")
     if "api_key" in data or "api_base" in data:
-        if llm_router is not None:
+        # If key has routing config, bypass router (passthrough to provider)
+        if user_api_key_dict and hasattr(user_api_key_dict, 'routing') and user_api_key_dict.routing:
+            return getattr(litellm, f"{route_type}")(**data)
+        elif llm_router is not None:
             return getattr(llm_router, f"{route_type}")(**data)
         else:
             return getattr(litellm, f"{route_type}")(**data)
