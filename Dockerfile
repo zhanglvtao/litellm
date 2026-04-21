@@ -16,6 +16,9 @@ USER root
 COPY --from=uvbin /uv /usr/local/bin/uv
 COPY --from=uvbin /uvx /usr/local/bin/uvx
 
+# Use Tsinghua mirror for faster apk downloads in China
+RUN echo 'https://mirrors.tuna.tsinghua.edu.cn/chainguard' > /etc/apk/repositories
+
 RUN apk add --no-cache \
     bash \
     gcc \
@@ -69,6 +72,9 @@ RUN sed -i 's/\r$//' docker/entrypoint.sh && chmod +x docker/entrypoint.sh && \
 FROM $LITELLM_RUNTIME_IMAGE AS runtime
 
 USER root
+
+# Use Tsinghua mirror for faster apk downloads in China
+RUN echo 'https://mirrors.tuna.tsinghua.edu.cn/chainguard' > /etc/apk/repositories
 
 RUN apk add --no-cache bash openssl tzdata nodejs npm python3 libsndfile supervisor && \
     npm install -g npm@11.12.1 tar@7.5.11 glob@11.1.0 @isaacs/brace-expansion@5.0.1 minimatch@10.2.4 diff@8.0.3 && \
