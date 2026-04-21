@@ -322,6 +322,16 @@ async def route_request(  # noqa: PLR0915 - Complex routing function, refactorin
     """
     await add_shared_session_to_data(data)
 
+    # Key-based provider routing: inject api_base/api_key from key config
+    if user_api_key_dict and hasattr(user_api_key_dict, 'routing') and user_api_key_dict.routing:
+        api_type = "anthropic" if route_type == "anthropic_messages" else "openai"
+        routing_config = getattr(user_api_key_dict.routing, api_type, None)
+        if routing_config:
+            if routing_config.get("api_base"):
+                data["api_base"] = routing_config["api_base"]
+            if routing_config.get("api_key"):
+                data["api_key"] = routing_config["api_key"]
+
     team_id = get_team_id_from_data(data)
     router_model_names = llm_router.model_names if llm_router is not None else []
 

@@ -2527,6 +2527,11 @@ class LiteLLM_VerificationTokenView(LiteLLM_VerificationToken):
         super().__init__(**kwargs)
 
 
+class KeyRoutingConfig(BaseModel):
+    anthropic: Optional[dict] = None
+    openai: Optional[dict] = None
+
+
 class UserAPIKeyAuth(
     LiteLLM_VerificationTokenView
 ):  # the expected response object for user api key auth
@@ -2554,6 +2559,7 @@ class UserAPIKeyAuth(
     # Decoded upstream IdP claims (groups, roles, etc.) propagated by JWT auth machinery
     # and forwarded into outbound tokens by guardrails such as MCPJWTSigner.
     jwt_claims: Optional[Dict] = None
+    routing: Optional[KeyRoutingConfig] = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

@@ -1662,9 +1662,13 @@ async def _return_user_api_key_auth_obj(
         user_api_key_kwargs.update(
             user_role=LitellmUserRoles.PROXY_ADMIN,
         )
-        return UserAPIKeyAuth(**user_api_key_kwargs)
-    else:
-        return UserAPIKeyAuth(**user_api_key_kwargs)
+    # Parse key-based routing config from metadata
+    _metadata = user_api_key_kwargs.get("metadata")
+    if _metadata and isinstance(_metadata, dict) and "routing" in _metadata:
+        from litellm.proxy._types import KeyRoutingConfig
+        user_api_key_kwargs["routing"] = KeyRoutingConfig(**_metadata["routing"])
+
+    return UserAPIKeyAuth(**user_api_key_kwargs)
 
 
 def get_api_key_from_custom_header(
