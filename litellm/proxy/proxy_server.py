@@ -6964,6 +6964,49 @@ async def model_list(
     """
     global llm_model_list, general_settings, llm_router, prisma_client, user_api_key_cache, proxy_logging_obj
 
+    # ===== Routing key: aggregate /v1/models from all providers, filtered by prefixes =====
+    if hasattr(user_api_key_dict, 'routing') and user_api_key_dict.routing:
+        import httpx
+        import random
+        # Collect all prefixes from both openai and anthropic providers
+        all_prefixes: set = set()
+        all_providers = []
+        for api_type in ['openai', 'anthropic']:
+            providers = getattr(user_api_key_dict.routing, api_type, None) or []
+            for p in providers:
+                if p.prefixes:
+                    all_prefixes.update(p.prefixes)
+                all_providers.append((api_type, p))
+
+        if not all_prefixes:
+            # No prefixes defined, return empty list for routing keys
+            return {"data": [], "object": "list"}
+
+        all_models = []
+        seen = set()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for api_type, p in all_providers:
+                keys = p.api_keys or ([p.api_key] if p.api_key else [])
+                if not keys:
+                    continue
+                try:
+                    resp = await client.get(
+                        f"{p.api_base.rstrip('/')}/models",
+                        headers={"Authorization": f"Bearer {random.choice(keys)}"}
+                    )
+                    if resp.status_code == 200:
+                        for m in resp.json().get("data", []):
+                            model_id = m.get("id", "")
+                            # Filter by prefixes
+                            if any(model_id.startswith(pre) for pre in all_prefixes):
+                                if model_id not in seen:
+                                    seen.add(model_id)
+                                    all_models.append(m)
+                except Exception:
+                    continue
+        return {"data": all_models, "object": "list"}
+    # ===== End routing key proxy =====
+
     from litellm.proxy.management_endpoints.common_utils import (
         _user_has_admin_privileges,
     )

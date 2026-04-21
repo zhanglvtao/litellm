@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from fastapi import HTTPException, status
@@ -325,12 +326,25 @@ async def route_request(  # noqa: PLR0915 - Complex routing function, refactorin
     # Key-based provider routing: inject api_base/api_key from key config
     if user_api_key_dict and hasattr(user_api_key_dict, 'routing') and user_api_key_dict.routing:
         api_type = "anthropic" if route_type == "anthropic_messages" else "openai"
-        routing_config = getattr(user_api_key_dict.routing, api_type, None)
-        if routing_config:
-            if routing_config.get("api_base"):
-                data["api_base"] = routing_config["api_base"]
-            if routing_config.get("api_key"):
-                data["api_key"] = routing_config["api_key"]
+        providers = getattr(user_api_key_dict.routing, api_type, None)
+        if providers:
+            model_name = data.get("model", "")
+            matched = None
+            for p in providers:
+                if not p.prefixes or any(model_name.startswith(pre) for pre in p.prefixes):
+                    matched = p
+                    break
+            if matched:
+                data["api_base"] = matched.api_base
+                keys = matched.api_keys or ([matched.api_key] if matched.api_key else [])
+                if keys:
+                    data["api_key"] = random.choice(keys)
+            else:
+                # Model does not match any allowed prefix for this routing key
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Model '{model_name}' is not allowed with this API key. No matching routing configuration found for {api_type} provider."
+                )
 
     team_id = get_team_id_from_data(data)
     router_model_names = llm_router.model_names if llm_router is not None else []

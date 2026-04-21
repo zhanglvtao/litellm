@@ -2527,9 +2527,15 @@ class LiteLLM_VerificationTokenView(LiteLLM_VerificationToken):
         super().__init__(**kwargs)
 
 
+class ProviderRouting(BaseModel):
+    api_base: str
+    api_key: Optional[str] = None
+    api_keys: Optional[List[str]] = None
+    prefixes: List[str] = []
+
 class KeyRoutingConfig(BaseModel):
-    anthropic: Optional[dict] = None
-    openai: Optional[dict] = None
+    anthropic: Optional[List[ProviderRouting]] = None
+    openai: Optional[List[ProviderRouting]] = None
 
 
 class UserAPIKeyAuth(

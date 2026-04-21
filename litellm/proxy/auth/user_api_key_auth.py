@@ -1666,7 +1666,12 @@ async def _return_user_api_key_auth_obj(
     _metadata = user_api_key_kwargs.get("metadata")
     if _metadata and isinstance(_metadata, dict) and "routing" in _metadata:
         from litellm.proxy._types import KeyRoutingConfig
-        user_api_key_kwargs["routing"] = KeyRoutingConfig(**_metadata["routing"])
+        routing_raw = _metadata["routing"]
+        for api_type in ("anthropic", "openai"):
+            val = routing_raw.get(api_type)
+            if val is not None and isinstance(val, dict):
+                routing_raw[api_type] = [val]
+        user_api_key_kwargs["routing"] = KeyRoutingConfig(**routing_raw)
 
     return UserAPIKeyAuth(**user_api_key_kwargs)
 
